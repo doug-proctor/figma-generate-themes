@@ -1,4 +1,4 @@
-# Hello World
+# Generate Themes
 
 ## Development guide
 
