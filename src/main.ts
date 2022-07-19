@@ -1,51 +1,96 @@
 export default function () {
 
-  // Delete existing themes...
-  figma.getLocalPaintStyles().filter(style => style.name.includes('Themes/')).forEach(style => style.remove())
+  const paintStyles = figma.getLocalPaintStyles().filter(paintStyle => !paintStyle.name.includes('Core/')).map(style => {
+    const nameSegments = style.name.split('/')
 
-  for (const node of figma.root.children) {
-    if ("findAll" in node) {
-      // @ts-ignore
-      const themes: FrameNode[] = node.findAll((node: { type: string; name: string | string[]; }) => node.type === "FRAME" && node.name.includes("Theme:"))
+    const id = style.id
+    const theme = nameSegments[0]
 
-      if (themes.length) {
-        // console.log(`Found ${themes.length} themes`)
+    nameSegments.shift()
+    const name = nameSegments.join('/')
 
-        themes.forEach(theme => {
-          // @ts-ignore
-          theme.children.map((token: EllipseNode) => {
-            const themeName = theme.name.split(":")[1]
-            const fills: any = token.fills
-            const colorLight = fills[0].color
+    return { id, theme, name }
+  })
+  console.log(paintStyles)
 
-            // Create the light theme:
-            const styleLight = figma.createPaintStyle();
-            styleLight.paints = [{ type: 'SOLID', color: colorLight }];
-            styleLight.name = `Themes/${themeName}/Light/${token.name}`;
+  // Handling deleted tokens:
+  // Each time we find a PaintStyle that's used by a token, we'll put its ID in this array. Then at the end,
+  // we'll delete all PaintStyles that don't have their IDs in the array.
+  const keepPaintStyles: string[] = []
 
-            // Compute the dark theme:
-            let styleObject = figma.getStyleById(token.fillStyleId as string)
-            const styleName = styleObject?.name.split('/')
+  const definitions = figma.root.findAll(node => node.name.includes("Themes:"))
 
-            if (styleName) {
-              const invertedName = 1000 - parseInt(styleName[2],10)
+  if (definitions.length) {
+    definitions.forEach(definition => {
+      if ("findAll" in definition) {
+        const tokens = definition.findAll((node: { name: string | string[]; }) => node.name.includes("token"))
 
-              // get the target style by its name
-              const paintStyles = figma.getLocalPaintStyles()
-              const target = paintStyles.filter(style => style.name === `Base/${styleName[1]}/${invertedName}`)[0]
-              const paints: any = target.paints
-              const colorDark = paints[0].color
+        if (tokens.length) {
+          const componentName = definition.name.split(":")[1]
 
-              // Create the dark theme
-              const styleDark = figma.createPaintStyle();
-              styleDark.paints = [{ type: 'SOLID', color: colorDark }];
-              styleDark.name = `Themes/${themeName}/Dark/${token.name}`;
+          tokens.forEach(token => {
+
+            let tokenName: string
+
+            // Get the text layer child named "Label" and get its content:
+            if ("findOne" in token) {
+              const labelLayer = token.findOne((node: { name: string; }) => node.name === "Label")
+              if (labelLayer && "characters" in labelLayer) {
+                tokenName = formatTokenName(labelLayer.characters)
+              }
+            }
+
+            // Get the swatches and their fill colours:
+            if ("findAll" in token) {
+              const swatchContainer = token.findAll((node: { name: string; }) => node.name === "Colours")[0]
+              if (swatchContainer && "findAll" in swatchContainer) {
+                const swatches = swatchContainer.findAll((node: { type: string; }) => node.type === "ELLIPSE")
+                swatches.forEach((swatch, i) => {
+                  if ("fills" in swatch) {
+                    const fills: any = swatch.fills
+                    const opacity = fills[0].opacity
+                    const color = fills[0].color
+
+                    createOrUpdateStyle(paintStyles, componentName, tokenName, swatch.name, color, opacity)
+                  }
+                })
+              }
             }
           })
-        })
+        }
       }
-    }
+    })
   }
 
-  figma.closePlugin();
+  // cleanup(keepPaintStyles) // not working yet
+
+  figma.closePlugin()
+}
+
+const createOrUpdateStyle = (paintStyles: any, componentName: string, tokenName: string, themeName: string, color: any, opacity: number) => {
+
+  // console.log(paintStyles, `${componentName}/${tokenName}`)
+  const existingStyle = paintStyles.find((style: { name: string; theme: string }) => style.name === `${componentName}/${tokenName}` && style.theme === themeName)
+  const style: PaintStyle = existingStyle ? figma.getStyleById(existingStyle.id) as PaintStyle : figma.createPaintStyle()
+
+  if (style) {
+    style.paints = [{ type: 'SOLID', color, opacity }];
+    style.name = `${themeName}/${componentName}/${tokenName}`;
+  }
+}
+
+// const cleanup = (keepPaintStyles: string[]) => {
+  // console.log('cleanup before', figma.getLocalPaintStyles().length)
+  // figma.getLocalPaintStyles()
+  //     .filter(style => style.name.includes('Theme/'))
+  //     .filter(style => !keepPaintStyles.includes(style.id))
+  //     .forEach(style => style.remove())
+  //
+  // console.log('cleanup after', figma.getLocalPaintStyles().length)
+// }
+
+const formatTokenName = (name: string) => {
+  // const joined = name.split(' ').join('')
+  // return joined[0].toLowerCase() + joined.substring(1)
+  return name
 }
