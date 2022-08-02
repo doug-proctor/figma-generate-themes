@@ -1,0 +1,9 @@
+{
+  "api": "1.0.0",
+  "editorType": [
+    "figma"
+  ],
+  "id": "generate-themes",
+  "name": "Generate Themes",
+  "main": "build/main.js"
+}
